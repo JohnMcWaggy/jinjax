@@ -1,7 +1,7 @@
 import ast
 import re
 from keyword import iskeyword
-from typing import Any
+from typing import Any, List, Optional
 
 from .exceptions import InvalidArgument, MissingRequiredArgument
 
@@ -37,13 +37,21 @@ def is_valid_variable_name(name):
 
 
 class Component:
-    def __init__(self, *, name: str, source: str, url_prefix: str = "") -> None:
+    def __init__(
+        self,
+        *,
+        name: str,
+        source: str,
+        url_prefix: str = "",
+        default_ctx_keys: Optional[List[str]] = None,
+    ) -> None:
         self.name = name
         self.url_prefix = url_prefix
         self.required: "list[str]" = []
         self.optional: "dict[str, Any]" = {}
         self.css: "list[str]" = []
         self.js: "list[str]" = []
+        self.default_ctx_keys: "list[str]" = default_ctx_keys or []
         self.load_metadata(source)
 
     def load_metadata(self, source: str) -> None:
@@ -113,12 +121,11 @@ class Component:
                 files.append(f"{self.url_prefix}{url}")
         return files
 
-    def filter_args(
-        self, kw: "dict[str, Any]"
-    ) -> "tuple[dict[str, Any], dict[str, Any]]":
+    def filter_args(self, kw: "dict[str, Any]") -> "tuple[dict[str, Any], dict[str, Any]]":
         props = {}
 
-        for key in self.required:
+        keys = self.required + self.default_ctx_keys
+        for key in keys:
             if key not in kw:
                 raise MissingRequiredArgument(self.name, key)
             props[key] = kw.pop(key)

@@ -37,6 +37,7 @@ class Catalog:
         "jinja_env",
         "collected_css",
         "collected_js",
+        "default_ctx_keys",
     )
 
     def __init__(
@@ -49,12 +50,14 @@ class Catalog:
         jinja_env: "t.Optional[jinja2.Environment]" = None,
         root_url: str = DEFAULT_URL_ROOT,
         file_ext: "TFileExt" = DEFAULT_EXTENSION,
+        default_ctx_keys: t.Optional[t.List[str]] = None,
     ) -> None:
         self.components: "dict[str,Component]" = {}
         self.prefixes: "dict[str,jinja2.FileSystemLoader]" = {}
         self.collected_css: "list[str]" = []
         self.collected_js: "list[str]" = []
         self.file_ext = file_ext
+        self.default_ctx_keys: "list[str]" = default_ctx_keys or []
 
         root_url = root_url.strip().rstrip(SLASH)
         self.root_url = f"{root_url}{SLASH}"
@@ -110,8 +113,12 @@ class Catalog:
         __name: str,
         *,
         caller: "t.Optional[t.Callable]" = None,
+        override_ctx_keys: "t.Optional[t.List[str]]" = None,
         **kw,
     ) -> str:
+        if override_ctx_keys is None:
+            override_ctx_keys = []
+
         content = (kw.pop("__content", "") or "").strip()
         attrs = kw.pop("__attrs", None) or {}
         file_ext = kw.pop("__file_ext", "")
@@ -130,7 +137,12 @@ class Catalog:
             tmpl = self.jinja_env.get_template(tmpl_name)
             source = path.read_text()
 
-        component = Component(name=__name, url_prefix=url_prefix, source=source)
+        component = Component(
+            name=__name,
+            url_prefix=url_prefix,
+            source=source,
+            default_ctx_keys=self.default_ctx_keys + override_ctx_keys,
+        )
         for css in component.css:
             if css not in self.collected_css:
                 self.collected_css.append(css)
@@ -161,9 +173,7 @@ class Catalog:
         **kwargs,
     ) -> ComponentsMiddleware:
         middleware = ComponentsMiddleware(
-            application=application,
-            allowed_ext=tuple(allowed_ext or []),
-            **kwargs
+            application=application, allowed_ext=tuple(allowed_ext or []), **kwargs
         )
 
         for prefix, loader in self.prefixes.items():
@@ -181,13 +191,9 @@ class Catalog:
 
     def render_assets(self) -> str:
         html_css = [
-            f'<link rel="stylesheet" href="{self.root_url}{css}">'
-            for css in self.collected_css
+            f'<link rel="stylesheet" href="{self.root_url}{css}">' for css in self.collected_css
         ]
-        html_js = [
-            f'<script src="{self.root_url}{js}" defer></script>'
-            for js in self.collected_js
-        ]
+        html_js = [f'<script src="{self.root_url}{js}" defer></script>' for js in self.collected_js]
         return Markup("\n".join(html_css + html_js))
 
     # Private
@@ -203,9 +209,7 @@ class Catalog:
         return DEFAULT_PREFIX, cname
 
     def _get_url_prefix(self, prefix: str) -> str:
-        url_prefix = (
-            prefix.strip().strip(f"{DELIMITER}{SLASH}").replace(DELIMITER, SLASH)
-        )
+        url_prefix = prefix.strip().strip(f"{DELIMITER}{SLASH}").replace(DELIMITER, SLASH)
         if url_prefix:
             url_prefix = f"{url_prefix}{SLASH}"
         return url_prefix
@@ -219,9 +223,7 @@ class Catalog:
         root_paths = self.prefixes[prefix].searchpath
 
         for root_path in root_paths:
-            for curr_folder, _folders, files in os.walk(
-                root_path, topdown=False, followlinks=True
-            ):
+            for curr_folder, _folders, files in os.walk(root_path, topdown=False, followlinks=True):
                 relfolder = os.path.relpath(curr_folder, root_path).strip(".")
                 if relfolder and not name_dot.startswith(relfolder):
                     continue
