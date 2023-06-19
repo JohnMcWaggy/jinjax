@@ -1,4 +1,6 @@
 import re
+from collections import UserString
+from functools import cached_property
 from typing import Any
 
 
@@ -22,9 +24,23 @@ def quote(text: str) -> str:
     return f'"{text}"'
 
 
+class LazyString(UserString):
+    """Behave like regular strings, but the actual casting of the initial value
+    is deferred until the value is actually required."""
+
+    __slots__ = ("_seq",)
+
+    def __init__(self, seq):
+        self._seq = seq
+
+    @cached_property
+    def data(self):
+        return str(self._seq)
+
+
 class HTMLAttrs:
     def __init__(self, attrs) -> None:
-        attributes: "dict[str, str]" = {}
+        attributes: "dict[str, str|LazyString]" = {}
         properties: "set[str]" = set()
 
         class_names = split(" ".join([
@@ -38,7 +54,7 @@ class HTMLAttrs:
             if value is True:
                 properties.add(name)
             elif value not in (False, None):
-                attributes[name] = str(value)
+                attributes[name] = LazyString(value)
 
         self.__attributes = attributes
         self.__properties = properties
